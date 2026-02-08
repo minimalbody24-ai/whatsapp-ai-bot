@@ -5,94 +5,158 @@ const openai = new OpenAI({
   apiKey: config.openai.apiKey,
 });
 
-const SYSTEM_PROMPT = `
-You are a warm, helpful AI Sales Assistant for a business.
-Your goals are:
-1. Answer client questions intelligently.
-2. Warm up leads through conversation.
-3. Identify when a client wants to schedule a meeting or speak to a human.
+// Sleep helper
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-If the client wants to book a meeting or asks "When can I talk?", "I want to book", etc., your goal is to ask for their preferred time or guide them to booking.
-If the client seems frustrated, unsure, or asks for a real person, suggest connecting them to a human agent.
-
-You should reply in the same language as the user (Hebrew/English).
-`;
-
-const generateResponse = async (userMessage, history = []) => {
+/**
+ * Creates a new thread or returns an existing one.
+ */
+const createThread = async () => {
   try {
-    const messages = [
-      { role: 'system', content: SYSTEM_PROMPT },
-      ...history,
-      { role: 'user', content: userMessage }
-    ];
+    const thread = await openai.beta.threads.create();
+    return thread.id;
+  } catch (error) {
+    console.error('Error creating thread:', error);
+    throw error;
+  }
+};
 
-    // Using function calling to detect intent structuredly
-    const tools = [
-      {
-        type: "function",
-        function: {
-          name: "schedule_meeting",
-          description: "Trigger this when the user expresses a clear desire to schedule a meeting or call.",
-          parameters: {
-            type: "object",
-            properties: {
-              preferred_time: {
-                type: "string",
-                description: "The preferred time or date mentioned by the user, if any."
-              }
-            },
-            required: []
-          }
-        }
-      },
-      {
-        type: "function",
-        function: {
-          name: "escalate_to_human",
-          description: "Trigger this when the user asks for a human, seems frustrated, or the query is too complex.",
-          parameters: {
-            type: "object",
-            properties: {
-              reason: {
-                type: "string",
-                description: "The reason for escalation."
-              }
-            },
-            required: ["reason"]
-          }
-        }
-      }
-    ];
-
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4o', // or gpt-3.5-turbo
-      messages: messages,
-      tools: tools,
-      tool_choice: "auto", 
+/**
+ * Adds a message to a thread and runs the assistant.
+ */
+const processMessage = async (threadId, userMessage) => {
+  try {
+    // 1. Add the user's message to the thread
+    await openai.beta.threads.messages.create(threadId, {
+      role: "user",
+      content: userMessage
     });
 
-    const responseMessage = response.choices[0].message;
+    // 2. Run the assistant on this thread
+    let run = await openai.beta.threads.runs.create(threadId, {
+      assistant_id: config.openai.assistantId,
+    });
 
-    // Check if a tool call was made
-    if (responseMessage.tool_calls) {
-      return {
-        type: 'action',
-        toolCalls: responseMessage.tool_calls,
-        content: responseMessage.content // Might be null if tool called directly
-      };
+    // 3. Poll for run completion
+    while (['queued', 'in_progress', 'cancelling'].includes(run.status)) {
+      await sleep(1000);
+      run = await openai.beta.threads.runs.retrieve(threadId, run.id);
     }
 
-    return {
-      type: 'reply',
-      content: responseMessage.content
-    };
+    if (run.status === 'completed') {
+      const messages = await openai.beta.threads.messages.list(threadId);
+      const lastMessage = messages.data.find(m => m.role === 'assistant');
+      
+      if (lastMessage && lastMessage.content && lastMessage.content.length > 0) {
+        const textBlock = lastMessage.content.find(c => c.type === 'text');
+        return {
+          type: 'reply',
+          content: textBlock ? textBlock.text.value : ""
+        };
+      }
+      return { type: 'reply', content: "..." };
+
+    } else if (run.status === 'requires_action') {
+      // Handle Function Calling
+      const toolCalls = run.required_action.submit_tool_outputs.tool_calls;
+      return {
+        type: 'action',
+        threadId: threadId,
+        runId: run.id,
+        toolCalls: toolCalls
+      };
+    } else {
+      console.error(`Run failed or expired. Status: ${run.status}`);
+      return { type: 'error', content: "Sorry, I had a momentary lapse. Can you say that again?" };
+    }
 
   } catch (error) {
-    console.error('Error with OpenAI:', error);
-    return { type: 'error', content: "I'm having trouble processing that right now." };
+    console.error('Error in processMessage:', error);
+    return { type: 'error', content: "System error." };
+  }
+};
+
+/**
+ * Submits the results of tool/function executions back to the run
+ */
+const submitToolOutputs = async (threadId, runId, toolOutputs) => {
+  try {
+    let run = await openai.beta.threads.runs.submitToolOutputs(threadId, runId, {
+      tool_outputs: toolOutputs
+    });
+
+    while (['queued', 'in_progress', 'cancelling'].includes(run.status)) {
+      await sleep(1000);
+      run = await openai.beta.threads.runs.retrieve(threadId, run.id);
+    }
+
+    if (run.status === 'completed') {
+      const messages = await openai.beta.threads.messages.list(threadId);
+      const lastMessage = messages.data.find(m => m.role === 'assistant');
+      const textBlock = lastMessage.content.find(c => c.type === 'text');
+      return {
+        type: 'reply',
+        content: textBlock ? textBlock.text.value : ""
+      };
+    }
+    
+    return { type: 'error', content: "Error after tool submission." };
+
+  } catch (error) {
+    console.error('Error submitting tool outputs:', error);
+    throw error;
+  }
+};
+
+// ... existing code ...
+
+/**
+ * Parses raw text into structured menu data using GPT-4o
+ */
+const parseMenuDetails = async (text) => {
+  try {
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        {
+          role: "system",
+          content: `You are a Nutritionist Assistant. Your goal is to extract structured menu data from raw text (which might be a summary of a client's questionnaire or a direct instruction).
+          
+          Output JSON format MUST be:
+          {
+            "clientName": "String (Hebrew)",
+            "calories": "String or Number",
+            "summary": "String (Short summary of the plan)",
+            "meals": {
+              "breakfast": "String (Menu option description)",
+              "lunch": "String",
+              "dinner": "String",
+              "snack": "String"
+            }
+          }
+
+          If information is missing, infer a standard healthy option or leave generic.
+          Translate to Hebrew if the input is in English (but usually input is Hebrew).
+          `
+        },
+        {
+          role: "user",
+          content: text
+        }
+      ],
+      response_format: { type: "json_object" }
+    });
+
+    return JSON.parse(response.choices[0].message.content);
+  } catch (error) {
+    console.error("Error parsing menu details:", error);
+    return null;
   }
 };
 
 module.exports = {
-  generateResponse,
+  createThread,
+  processMessage,
+  submitToolOutputs,
+  parseMenuDetails
 };

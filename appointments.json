@@ -1,0 +1,67 @@
+[
+  {
+    "firstName": "יוסי",
+    "lastName": "שמואל",
+    "phone": "0582994662",
+    "preferredTime": "מחר בערב",
+    "status": "pending_zapier",
+    "createdAt": "2026-01-31T17:23:41.028Z"
+  },
+  {
+    "firstName": "יוסי",
+    "lastName": "שמטול",
+    "phone": "0527593665",
+    "preferredTime": "מחר ב-7:00",
+    "status": "pending_zapier",
+    "createdAt": "2026-01-31T17:33:57.660Z"
+  },
+  {
+    "firstName": "יוסי",
+    "lastName": "שמוטל",
+    "phone": "0528774002",
+    "preferredTime": "מחר ב 20:00",
+    "status": "pending_zapier",
+    "createdAt": "2026-01-31T18:07:54.624Z"
+  },
+  {
+    "firstName": "TestUser",
+    "lastName": "DirectTest",
+    "phone": "0509999999",
+    "email": "test@direct.com",
+    "preferredTime": "יום ראשון בבוקר",
+    "status": "pending_zapier",
+    "createdAt": "2026-01-31T18:19:12.814Z"
+  },
+  {
+    "firstName": "יוסי",
+    "lastName": "שמותל",
+    "phone": "0528663995",
+    "preferredTime": "בוקר ב-10",
+    "status": "pending_zapier",
+    "createdAt": "2026-01-31T18:23:08.461Z"
+  },
+  {
+    "firstName": "שמואל",
+    "lastName": "עטר",
+    "phone": "0546565656",
+    "preferredTime": "יום ראשון ב-20:00",
+    "status": "pending_zapier",
+    "createdAt": "2026-01-31T18:30:04.977Z"
+  },
+  {
+    "firstName": "דניאל",
+    "lastName": "דשא",
+    "phone": "05046464636",
+    "preferredTime": "יום ראשון בשעה 19:00",
+    "status": "pending_zapier",
+    "createdAt": "2026-01-31T18:48:52.721Z"
+  },
+  {
+    "firstName": "ברוך",
+    "lastName": "ברוך",
+    "phone": "0542345432",
+    "preferredTime": "ראשון 6:00",
+    "status": "pending_manual",
+    "createdAt": "2026-01-31T18:59:54.576Z"
+  }
+]

@@ -1,15 +1,48 @@
+const fs = require('fs');
+const path = require('path');
 const axios = require('axios');
 const config = require('../config');
 
-// Stub function to schedule a meeting
-const scheduleMeeting = async (clientName, clientPhone, preferredTime) => {
-  console.log(`[Boostapp] Scheduling meeting for ${clientName} (${clientPhone}) at ${preferredTime}`);
+const APPOINTMENTS_FILE = path.join(__dirname, '../../appointments.json');
+
+// Helper to save locally
+const saveLocally = (appointment) => {
+  let appointments = [];
+  try {
+    if (fs.existsSync(APPOINTMENTS_FILE)) {
+      const data = fs.readFileSync(APPOINTMENTS_FILE, 'utf8');
+      appointments = JSON.parse(data);
+    }
+  } catch (err) {
+    console.error("Error reading appointments file", err);
+  }
+
+  appointments.push(appointment);
+  fs.writeFileSync(APPOINTMENTS_FILE, JSON.stringify(appointments, null, 2));
+  console.log("Saved appointment locally.");
+};
+
+const scheduleMeeting = async (details) => {
+  const { firstName, lastName, phone, email, preferredTime } = details;
+  const fullName = `${firstName} ${lastName}`;
   
-  // TODO: Replace with actual Boostapp API call
-  // Example:
-  // const response = await axios.post(`${config.boostapp.baseUrl}/appointments`, { ... });
-  
-  return { success: true, message: "Meeting scheduled locally (stub)." };
+  console.log(`[System] Processing lead for: ${fullName}`);
+
+  const appointmentData = {
+    firstName,
+    lastName,
+    phone,
+    email,
+    preferredTime,
+    status: 'pending_manual',
+    createdAt: new Date().toISOString()
+  };
+
+  // 1. Save locally
+  saveLocally(appointmentData);
+
+  // Zapier is DISABLED. We only save locally and return success.
+  return { success: true, message: "Saved locally. Zapier disabled." };
 };
 
 module.exports = {

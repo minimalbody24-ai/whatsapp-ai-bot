@@ -1,0 +1,5 @@
+{
+  "ignore": ["appointments.json", "*.log"],
+  "watch": ["src"],
+  "ext": "js,json"
+}
