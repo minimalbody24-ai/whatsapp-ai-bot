@@ -166,26 +166,43 @@ app.post('/webhook', async (req, res) => {
 // NEW: Webhook for Zapier (Google Forms)
 app.post('/webhook/forms', async (req, res) => {
     try {
-        const formData = req.body; // Zapier will send JSON
+        const formData = req.body; // Google Apps Script sends JSON
         console.log('Received form data:', formData);
 
-        // Extract key fields (Adjust these keys based on what Zapier sends)
-        // We assume Zapier sends fields like: name, phone, weight, goal, restrictions
+        // Extract key fields for the header
         const clientName = formData.name || formData['שם מלא'] || "מתאמן חדש";
         const phone = formData.phone || formData['טלפון'] || "";
-        const goal = formData.goal || formData['מטרה'] || "לא צוין";
-        const weight = formData.weight || formData['משקל'] || "לא צוין";
-        const restrictions = formData.restrictions || formData['רגישויות'] || "אין";
+        
+        // Build a comprehensive list of ALL fields
+        let fullDetails = "";
+        const ignoredKeys = ['name', 'phone', 'email', 'weight', 'goal', 'restrictions']; // Keys we might show in header or want to skip duplication if mapped
+
+        // Add mapped fields first for clarity
+        if (formData.weight) fullDetails += `⚖️ משקל: ${formData.weight}\n`;
+        if (formData.goal) fullDetails += `🎯 מטרה: ${formData.goal}\n`;
+        if (formData.restrictions) fullDetails += `⚠️ רגישויות: ${formData.restrictions}\n`;
+        
+        fullDetails += `\n📝 *שאר התשובות מהשאלון:*\n`;
+
+        // Iterate over all other keys
+        for (const [key, value] of Object.entries(formData)) {
+            // Skip if it's one of the main keys we already showed or mapped
+            if (ignoredKeys.includes(key)) continue;
+            // Skip empty values
+            if (!value || value === "") continue;
+            
+            fullDetails += `🔹 ${key}: ${value}\n`;
+        }
 
         // Construct summary message for YOU (The Manager)
         const summaryMsg = `🔔 *התקבל שאלון תזונה חדש!*
 👤 שם: ${clientName}
 📱 טלפון: ${phone}
-⚖️ משקל: ${weight}
-🎯 מטרה: ${goal}
-⚠️ רגישויות/הערות: ${restrictions}
 
-כדי לייצר תפריט, פשוט השב להודעה זו עם ההנחיות (למשל: "תכין לה תפריט חיטוב 1500 קלוריות, היא אוהבת דגים").`;
+${fullDetails}
+
+-----------------------------
+כדי לייצר תפריט, פשוט השב להודעה זו עם ההנחיות (למשל: "תכין לה תפריט חיטוב 1500 קלוריות...").`;
 
         // Send to YOU (Manager)
         if (config.humanAgent.phone) {
