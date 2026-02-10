@@ -77,8 +77,17 @@ app.post('/webhook', async (req, res) => {
       }
       // ----------------------------------------
 
-      if (data.data.fromMe) {
-        return res.status(200).send('Message from me, ignoring.');
+      // Allow ADMIN to chat with the bot (as a consultant)
+      if (cleanFrom === adminPhone) {
+        // Do NOT return here. Let the code proceed to "processMessage" below.
+        console.log('Admin is chatting with the bot.');
+      } else if (data.data.fromMe) {
+        // If it's me (the bot/phone owner) but NOT the specific admin number we track (or if running on same number)
+        // Usually fromMe=true means the message was sent FROM the connected phone.
+        // If the connected phone IS the admin phone, we want to allow it.
+        if (cleanFrom !== adminPhone) {
+             return res.status(200).send('Message from me, ignoring.');
+        }
       }
 
       console.log(`Received message from ${from}: ${messageBody}`);
@@ -182,7 +191,7 @@ app.post('/webhook/forms', async (req, res) => {
         if (formData.goal) fullDetails += `🎯 מטרה: ${formData.goal}\n`;
         if (formData.restrictions) fullDetails += `⚠️ רגישויות: ${formData.restrictions}\n`;
         
-        fullDetails += `\n📝 *שאר התשובות מהשאלון:*\n`;
+        fullDetails += `\n\n📝 *שאר התשובות מהשאלון:*\n\n`;
 
         // Iterate over all other keys
         for (const [key, value] of Object.entries(formData)) {
@@ -191,7 +200,7 @@ app.post('/webhook/forms', async (req, res) => {
             // Skip empty values
             if (!value || value === "") continue;
             
-            fullDetails += `🔹 ${key}: ${value}\n`;
+            fullDetails += `🔹 *${key}*: ${value}\n\n`;
         }
 
         // Construct summary message for YOU (The Manager)
