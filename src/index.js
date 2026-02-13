@@ -1,7 +1,7 @@
 const express = require('express');
 const config = require('./config');
 const openaiService = require('./services/openai');
-const ultramsgService = require('./services/ultramsg');
+const whatsappService = require('./services/greenapi'); 
 const boostappService = require('./services/boostapp');
 const pdfGenerator = require('./services/pdfGenerator');
 const path = require('path');
@@ -15,46 +15,70 @@ app.use(express.urlencoded({ extended: true }));
 const userThreads = {};
 
 app.get('/', (req, res) => {
-  res.send('WhatsApp AI Sales Assistant (Assistants API Version) is running!');
+  res.send('WhatsApp AI Sales Assistant (Green-API Version) is running!');
 });
 
 app.post('/webhook', async (req, res) => {
   try {
     const data = req.body;
+    
+    // Green-API Payload Structure Handling
+    // We are looking for 'incomingMessageReceived' type
+    if (data.typeWebhook === 'incomingMessageReceived' || data.typeWebhook === 'outgoingMessageReceived') {
+        const senderData = data.senderData;
+        const messageData = data.messageData;
 
-    if (data.data && data.data.from && data.data.body && data.event_type === 'message_received') {
-      const from = data.data.from; 
-      const messageBody = data.data.body;
-      const pushName = data.data.pushname || 'Client';
+        // Extract sender phone number (clean it)
+        const from = senderData.chatId; // e.g., "972501234567@c.us"
+        const cleanFrom = from.replace('@c.us', '');
+        
+        // Extract message body (text)
+        let messageBody = "";
+        if (messageData.typeMessage === 'textMessage') {
+            messageBody = messageData.textMessageData.textMessage;
+        } else if (messageData.typeMessage === 'extendedTextMessage') {
+            messageBody = messageData.extendedTextMessageData.text;
+        }
 
-      // --- ADMIN COMMANDS (Menu Generation) ---
-      const cleanFrom = from.replace('@c.us', '');
-      const adminPhone = config.humanAgent.phone.replace(/[^0-9]/g, ''); // Ensure clean number
+        // Ignore empty messages or non-text for now
+        if (!messageBody) {
+            return res.status(200).send('Non-text message received');
+        }
 
-      if (cleanFrom === adminPhone && (messageBody.includes('תפריט') || messageBody.includes('קלוריות') || messageBody.includes('שם:') || messageBody.length > 50)) {
-          console.log('Received admin command for menu generation.');
-          
-          await ultramsgService.sendMessage(from, "קיבלתי! מעבד את הנתונים ומכין את תפריט התזונה... 👨‍🍳");
+        console.log(`Received message from ${cleanFrom}: ${messageBody}`);
 
-          // 1. Parse Data
-          const menuData = await openaiService.parseMenuDetails(messageBody);
+        const pushName = senderData.senderName || 'Client';
+        const adminPhone = config.humanAgent.phone.replace(/[^0-9]/g, '');
 
-          if (menuData) {
-              // 2. Generate PDF
-              const tempDir = path.join(__dirname, '../temp');
-              if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
+        // --- ADMIN COMMANDS (Menu Generation) ---
+        if (cleanFrom === adminPhone && (messageBody.includes('תפריט') || messageBody.includes('קלוריות') || messageBody.includes('שם:') || messageBody.length > 50)) {
+            // Check if it is outgoing message (from me to bot on same number) or incoming (from me to bot number if different)
+            // Green-API 'outgoingMessageReceived' means I sent it from my phone.
+            // If I am the admin, I want to process my own commands.
+            
+            console.log('Received admin command for menu generation.');
+            
+            await whatsappService.sendMessage(from, "קיבלתי! מעבד את הנתונים ומכין את תפריט התזונה... 👨‍🍳");
 
-              const fileName = `Menu_${Date.now()}.pdf`;
-              const filePath = path.join(tempDir, fileName);
-              
-              await pdfGenerator.generate(menuData, filePath);
-              console.log('PDF generated at:', filePath);
+            // 1. Parse Data
+            const menuData = await openaiService.parseMenuDetails(messageBody);
 
-              // 3. Send PDF
-              await ultramsgService.sendDocument(from, filePath, `תפריט עבור ${menuData.clientName}`);
+            if (menuData) {
+                // 2. Generate PDF
+                const tempDir = path.join(__dirname, '../temp');
+                if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir);
 
-              // 4. Send Kali Prompt
-              const kaliPrompt = `
+                const fileName = `Menu_${Date.now()}.pdf`;
+                const filePath = path.join(tempDir, fileName);
+                
+                await pdfGenerator.generate(menuData, filePath);
+                console.log('PDF generated at:', filePath);
+
+                // 3. Send PDF
+                await whatsappService.sendDocument(from, filePath, `תפריט עבור ${menuData.clientName}`);
+
+                // 4. Send Kali Prompt
+                const kaliPrompt = `
 *העתק את הטקסט הבא עבור קאלי (בוט התזונה):*
 
 שם המתאמן: ${menuData.clientName}
@@ -67,100 +91,86 @@ app.post('/webhook', async (req, res) => {
 
 הנחיות לבוט: זהו התפריט המאושר. עזרי למתאמן להיצמד אליו, הציעי תחליפים דומים אם נדרש, ועודדי אותו!
 `;
-              await ultramsgService.sendMessage(from, kaliPrompt);
+                await whatsappService.sendMessage(from, kaliPrompt);
 
-          } else {
-              await ultramsgService.sendMessage(from, "לא הצלחתי לחלץ נתונים ברורים. נסה לשלוח טקסט מפורט יותר (שם, קלוריות, ארוחות).");
-          }
+            } else {
+                await whatsappService.sendMessage(from, "לא הצלחתי לחלץ נתונים ברורים. נסה לשלוח טקסט מפורט יותר (שם, קלוריות, ארוחות).");
+            }
 
-          return res.status(200).send('Admin command processed');
-      }
-      // ----------------------------------------
-
-      // Allow ADMIN to chat with the bot (as a consultant)
-      if (cleanFrom === adminPhone) {
-        // Do NOT return here. Let the code proceed to "processMessage" below.
-        console.log('Admin is chatting with the bot.');
-      } else if (data.data.fromMe) {
-        // If it's me (the bot/phone owner) but NOT the specific admin number we track (or if running on same number)
-        // Usually fromMe=true means the message was sent FROM the connected phone.
-        // If the connected phone IS the admin phone, we want to allow it.
-        if (cleanFrom !== adminPhone) {
-             return res.status(200).send('Message from me, ignoring.');
+            return res.status(200).send('Admin command processed');
         }
-      }
+        // ----------------------------------------
 
-      console.log(`Received message from ${from}: ${messageBody}`);
+        // If it's an outgoing message (I sent it) and it wasn't a command, ignore it to prevent loops/self-talk
+        if (data.typeWebhook === 'outgoingMessageReceived') {
+             return res.status(200).send('Ignoring outgoing message');
+        }
 
-      if (!userThreads[from]) {
-        console.log(`Creating new thread for ${from}...`);
-        userThreads[from] = await openaiService.createThread();
-      }
-      const threadId = userThreads[from];
+        if (!userThreads[from]) {
+            console.log(`Creating new thread for ${from}...`);
+            userThreads[from] = await openaiService.createThread();
+        }
+        const threadId = userThreads[from];
 
-      const aiResponse = await openaiService.processMessage(threadId, messageBody);
+        const aiResponse = await openaiService.processMessage(threadId, messageBody);
 
-      if (aiResponse.type === 'action') {
-        const toolOutputs = [];
-        
-        for (const toolCall of aiResponse.toolCalls) {
-          const functionName = toolCall.function.name;
-          const args = JSON.parse(toolCall.function.arguments);
-          let output = "{}";
-
-          console.log(`Executing tool: ${functionName} with args:`, args);
-
-          if (functionName === 'schedule_meeting') {
-            // 1. Send to Zapier (Boostapp)
-            const result = await boostappService.scheduleMeeting({
-              firstName: args.first_name,
-              lastName: args.last_name,
-              phone: args.phone,
-              email: args.email,
-              preferredTime: args.preferred_time
-            });
+        if (aiResponse.type === 'action') {
+            const toolOutputs = [];
             
-            output = JSON.stringify({ success: true, message: "Meeting request sent." });
+            for (const toolCall of aiResponse.toolCalls) {
+                const functionName = toolCall.function.name;
+                const args = JSON.parse(toolCall.function.arguments);
+                let output = "{}";
 
-            // 2. NEW: Notify the Human Manager immediately!
-            if (config.humanAgent.phone) {
-              const alertMsg = `🚀 *ליד חדש!*
+                console.log(`Executing tool: ${functionName} with args:`, args);
+
+                if (functionName === 'schedule_meeting') {
+                    const result = await boostappService.scheduleMeeting({
+                        firstName: args.first_name,
+                        lastName: args.last_name,
+                        phone: args.phone,
+                        email: args.email,
+                        preferredTime: args.preferred_time
+                    });
+                    
+                    output = JSON.stringify({ success: true, message: "Meeting request sent." });
+
+                    if (config.humanAgent.phone) {
+                        const alertMsg = `🚀 *ליד חדש!*
 שם: ${args.first_name} ${args.last_name}
 טלפון: ${args.phone}
 זמן מבוקש: ${args.preferred_time}
 אימייל: ${args.email || 'לא סופק'}
 
 הפרטים נשלחו ל-Zapier.`;
-              
-              await ultramsgService.sendMessage(config.humanAgent.phone, alertMsg);
-              console.log(`Notification sent to human agent: ${config.humanAgent.phone}`);
+                        
+                        await whatsappService.sendMessage(config.humanAgent.phone, alertMsg);
+                    }
+                    
+                } else if (functionName === 'escalate_to_human') {
+                    if (config.humanAgent.phone) {
+                        await whatsappService.sendMessage(config.humanAgent.phone, `⚠️ Escalation needed for ${from} (${pushName}). Reason: ${args.reason}`);
+                    }
+                    output = JSON.stringify({ success: true, message: "Human agent notified." });
+                }
+
+                toolOutputs.push({
+                    tool_call_id: toolCall.id,
+                    output: output
+                });
             }
+
+            const finalResponse = await openaiService.submitToolOutputs(threadId, aiResponse.runId, toolOutputs);
             
-          } else if (functionName === 'escalate_to_human') {
-             if (config.humanAgent.phone) {
-              await ultramsgService.sendMessage(config.humanAgent.phone, `⚠️ Escalation needed for ${from} (${pushName}). Reason: ${args.reason}`);
+            if (finalResponse.type === 'reply') {
+                await whatsappService.sendMessage(from, finalResponse.content);
             }
-            output = JSON.stringify({ success: true, message: "Human agent notified." });
-          }
 
-          toolOutputs.push({
-            tool_call_id: toolCall.id,
-            output: output
-          });
+        } else if (aiResponse.type === 'reply') {
+            await whatsappService.sendMessage(from, aiResponse.content);
+        } else if (aiResponse.type === 'error') {
+            await whatsappService.sendMessage(from, "Sorry, I'm having a brief technical hiccup.");
         }
-
-        const finalResponse = await openaiService.submitToolOutputs(threadId, aiResponse.runId, toolOutputs);
-        
-        if (finalResponse.type === 'reply') {
-          await ultramsgService.sendMessage(from, finalResponse.content);
-        }
-
-      } else if (aiResponse.type === 'reply') {
-        await ultramsgService.sendMessage(from, aiResponse.content);
-      } else if (aiResponse.type === 'error') {
-         await ultramsgService.sendMessage(from, "Sorry, I'm having a brief technical hiccup.");
-      }
-
     }
     
     res.status(200).send('Event received');
@@ -170,40 +180,30 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// ... existing code ...
-
-// NEW: Webhook for Zapier (Google Forms)
+// NEW: Webhook for Zapier (Google Forms) - Remains same logic, just uses whatsappService
 app.post('/webhook/forms', async (req, res) => {
     try {
-        const formData = req.body; // Google Apps Script sends JSON
+        const formData = req.body; 
         console.log('Received form data:', formData);
 
-        // Extract key fields for the header
         const clientName = formData.name || formData['שם מלא'] || "מתאמן חדש";
         const phone = formData.phone || formData['טלפון'] || "";
         
-        // Build a comprehensive list of ALL fields
         let fullDetails = "";
-        const ignoredKeys = ['name', 'phone', 'email', 'weight', 'goal', 'restrictions']; // Keys we might show in header or want to skip duplication if mapped
+        const ignoredKeys = ['name', 'phone', 'email', 'weight', 'goal', 'restrictions'];
 
-        // Add mapped fields first for clarity
         if (formData.weight) fullDetails += `⚖️ משקל: ${formData.weight}\n`;
         if (formData.goal) fullDetails += `🎯 מטרה: ${formData.goal}\n`;
         if (formData.restrictions) fullDetails += `⚠️ רגישויות: ${formData.restrictions}\n`;
         
         fullDetails += `\n\n📝 *שאר התשובות מהשאלון:*\n\n`;
 
-        // Iterate over all other keys
         for (const [key, value] of Object.entries(formData)) {
-            // Skip if it's one of the main keys we already showed or mapped
             if (ignoredKeys.includes(key)) continue;
-            // Skip empty values
             if (!value || value === "") continue;
-            
             fullDetails += `🔹 *${key}*: ${value}\n\n`;
         }
 
-        // Construct summary message for YOU (The Manager)
         const summaryMsg = `🔔 *התקבל שאלון תזונה חדש!*
 👤 שם: ${clientName}
 📱 טלפון: ${phone}
@@ -213,9 +213,8 @@ ${fullDetails}
 -----------------------------
 כדי לייצר תפריט, פשוט השב להודעה זו עם ההנחיות (למשל: "תכין לה תפריט חיטוב 1500 קלוריות...").`;
 
-        // Send to YOU (Manager)
         if (config.humanAgent.phone) {
-            await ultramsgService.sendMessage(config.humanAgent.phone, summaryMsg);
+            await whatsappService.sendMessage(config.humanAgent.phone, summaryMsg);
         }
 
         res.status(200).send('Form processed');

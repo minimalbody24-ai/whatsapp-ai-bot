@@ -6,9 +6,9 @@ module.exports = {
     apiKey: process.env.OPENAI_API_KEY,
     assistantId: process.env.ASSISTANT_ID,
   },
-  ultramsg: {
-    instanceId: process.env.ULTRAMSG_INSTANCE_ID,
-    token: process.env.ULTRAMSG_TOKEN,
+  greenapi: {
+    idInstance: process.env.GREEN_API_ID_INSTANCE,
+    apiTokenInstance: process.env.GREEN_API_TOKEN_INSTANCE,
   },
   boostapp: {
     // Zapier disabled for now
