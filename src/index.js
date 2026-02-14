@@ -51,7 +51,11 @@ app.post('/webhook', async (req, res) => {
         const adminPhone = config.humanAgent.phone.replace(/[^0-9]/g, '');
 
         // --- ADMIN COMMANDS (Menu Generation) ---
-        if (cleanFrom === adminPhone && (messageBody.includes('תפריט') || messageBody.includes('קלוריות') || messageBody.includes('שם:') || messageBody.length > 50)) {
+        // Require explicit command words like "create menu" or "תכין" to avoid triggering on casual chat about calories
+        const isMenuCommand = (messageBody.includes('תכין') || messageBody.includes('צור') || messageBody.includes('create')) && 
+                              (messageBody.includes('תפריט') || messageBody.includes('menu'));
+
+        if (cleanFrom === adminPhone && isMenuCommand) {
             // Check if it is outgoing message (from me to bot on same number) or incoming (from me to bot number if different)
             // Green-API 'outgoingMessageReceived' means I sent it from my phone.
             // If I am the admin, I want to process my own commands.
