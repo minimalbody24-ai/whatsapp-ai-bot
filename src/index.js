@@ -47,6 +47,15 @@ app.post('/webhook', async (req, res) => {
 
         console.log(`Received message from ${cleanFrom}: ${messageBody}`);
 
+        // --- RESET COMMAND ---
+        if (messageBody.toLowerCase() === 'reset' || messageBody === 'התחל מחדש') {
+            console.log(`Resetting thread for ${from}`);
+            userThreads[from] = await openaiService.createThread();
+            await whatsappService.sendMessage(from, "הזיכרון נמחק. בוא נתחיל מחדש! היי, איך קוראים לך?");
+            return res.status(200).send('Thread reset');
+        }
+        // ---------------------
+
         const pushName = senderData.senderName || 'Client';
         const adminPhone = config.humanAgent.phone.replace(/[^0-9]/g, '');
 
