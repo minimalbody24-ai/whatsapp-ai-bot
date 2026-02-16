@@ -18,6 +18,17 @@ app.get('/', (req, res) => {
   res.send('WhatsApp AI Sales Assistant (Green-API Version) is running!');
 });
 
+// Helper to notify admin
+const notifyAdmin = async (message) => {
+    if (config.humanAgent.phone) {
+        try {
+            await whatsappService.sendMessage(config.humanAgent.phone, `🚨 *System Alert*\n${message}`);
+        } catch (err) {
+            console.error('Failed to notify admin:', err);
+        }
+    }
+};
+
 app.post('/webhook', async (req, res) => {
   try {
     const data = req.body;
@@ -138,28 +149,100 @@ app.post('/webhook', async (req, res) => {
                 console.log(`Executing tool: ${functionName} with args:`, args);
 
                 if (functionName === 'schedule_meeting') {
-                    const result = await boostappService.scheduleMeeting({
-                        firstName: args.first_name,
-                        lastName: args.last_name,
-                        phone: args.phone,
-                        email: args.email,
-                        preferredTime: args.preferred_time
-                    });
-                    
-                    output = JSON.stringify({ success: true, message: "Meeting request sent." });
-
+                    // 1. Notify Admin (Priority)
                     if (config.humanAgent.phone) {
-                        const alertMsg = `🚀 *ליד חדש!*
-שם: ${args.first_name} ${args.last_name}
-טלפון: ${args.phone}
-זמן מבוקש: ${args.preferred_time}
-אימייל: ${args.email || 'לא סופק'}
-
-הפרטים נשלחו ל-Zapier.`;
+                        const alertMsg = `📝 **תיעוד ליד ל-CRM (Minimalbody)**
+- שם: ${args.first_name} ${args.last_name}
+- טלפון: ${args.phone}
+- אזור מגורים: ${args.location || 'לא צוין'}
+- מטרה: ${args.goal || 'לא צוין'}
+- ניסיון: ${args.experience || 'לא צוין'}
+- זמינות: ${args.preferred_time}
+- דגשים: ${args.summary_text || 'אין דגשים מיוחדים'}`;
                         
-                        await whatsappService.sendMessage(config.humanAgent.phone, alertMsg);
+                        try {
+                            await whatsappService.sendMessage(config.humanAgent.phone, alertMsg);
+                            console.log('Admin notification sent.');
+                        } catch (err) {
+                            console.error('Failed to send admin notification:', err);
+                        }
+                    }
+
+                    // 2. Try BoostApp (Optional)
+                    try {
+                        await boostappService.scheduleMeeting({
+                            firstName: args.first_name,
+                            lastName: args.last_name,
+                            phone: args.phone,
+                            email: args.email,
+                            preferredTime: args.preferred_time
+                        });
+                    } catch (err) {
+                        console.error('BoostApp scheduling failed:', err);
                     }
                     
+                    output = JSON.stringify({ success: true, message: "Meeting request processed." });
+
+                } else if (functionName === 'send_social_proof') {
+                    console.log(`[Social Proof] Args received:`, args);
+                    
+                    const type = args.type || 'general';
+                    const gender = (args.gender || 'unknown').toLowerCase();
+                    const age = args.age || 0;
+
+                    let message = "";
+                    
+                    if (type === 'reviews') {
+                        message = `⭐ *מה מתאמנים מספרים עלינו:*
+לקוחות משתפים בחוויות שלהם בגוגל:
+${config.social.googleReviews}
+
+אנחנו גאים בכל אחד ואחת מהם!`;
+                    } else if (type === 'video') {
+                        // Safe access to video config
+                        const videos = config.social.videos || {};
+                        let videoUrl = config.social.instagram; // Default fallback
+                        
+                        if (gender === 'male' && videos.male) {
+                            videoUrl = videos.male;
+                        } else if (gender === 'female' && videos.female) {
+                            videoUrl = videos.female;
+                        } else {
+                            videoUrl = config.social.instagram;
+                        }
+
+                        console.log(`[Social Proof] Selected video URL: ${videoUrl} for gender: ${gender}`);
+
+                        message = `🎥 *קצת מהאווירה בסטודיו:*
+מוזמן להציץ בסרטון קצר:
+${videoUrl}`;
+
+                    } else if (type === 'instagram') {
+                         message = `🎥 *האינסטגרם שלנו:*
+מוזמן לעקוב ולראות את האווירה בסטודיו:
+${config.social.instagram}`;
+                    } else {
+                        // General case
+                        message = `⭐ *הוכחות מהשטח:*
+                        
+👀 *האינסטגרם שלנו:* ${config.social.instagram}
+💬 *ביקורות בגוגל:* ${config.social.googleReviews}`;
+                    }
+
+                    try {
+                        const sent = await whatsappService.sendMessage(from, message);
+                        if (sent) {
+                             console.log(`[Social Proof] Message sent successfully to ${from}`);
+                             output = JSON.stringify({ success: true, message: "Social proof sent." });
+                        } else {
+                             console.error(`[Social Proof] Failed to send message to ${from}`);
+                             output = JSON.stringify({ success: false, message: "Failed to send message via WhatsApp provider." });
+                        }
+                    } catch (error) {
+                        console.error(`[Social Proof] Exception sending message:`, error);
+                        output = JSON.stringify({ success: false, message: "Error sending message." });
+                    }
+
                 } else if (functionName === 'escalate_to_human') {
                     if (config.humanAgent.phone) {
                         await whatsappService.sendMessage(config.humanAgent.phone, `⚠️ Escalation needed for ${from} (${pushName}). Reason: ${args.reason}`);
@@ -189,6 +272,10 @@ app.post('/webhook', async (req, res) => {
     res.status(200).send('Event received');
   } catch (error) {
     console.error('Error processing webhook:', error);
+    
+    // Notify Admin about critical failures
+    await notifyAdmin(`Critical Error in Webhook:\n${error.message || error}`);
+    
     res.status(500).send('Internal Server Error');
   }
 });
