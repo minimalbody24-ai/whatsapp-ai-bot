@@ -32,6 +32,7 @@ const notifyAdmin = async (message) => {
 app.post('/webhook', async (req, res) => {
   try {
     const data = req.body;
+    console.log('🔍 Raw Webhook Received:', JSON.stringify(data, null, 2)); // Log EVERYTHING
     
     // Green-API Payload Structure Handling
     // We are looking for 'incomingMessageReceived' type
