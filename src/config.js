@@ -25,8 +25,8 @@ module.exports = {
     googleReviews: 'https://www.google.com/maps/place/Minimal+Body+-+מינימל+בודי%E2%80%AD/@31.6804886,34.5561819,17z/data=!4m8!3m7!1s0x15029d8e7d7b8579:0x497b4a85defea479!8m2!3d31.6804886!4d34.5561819!9m1!1b1!16s%2Fg%2F11xdhq_rdc?entry=ttu',
     website: 'https://minimalbody.co.il',
     videos: {
-        male: 'https://www.instagram.com/reel/DNLRupaMg3G/?utm_source=ig_web_copy_link&igsh=MzRlODBiNWFlZA==',
-        female: 'https://www.instagram.com/reel/DNxQiYwWIom/?utm_source=ig_web_copy_link&igsh=MzRlODBiNWFlZA=='
+        male: 'https://www.instagram.com/reel/DNLRupaMg3G/',
+        female: 'https://www.instagram.com/reel/DNxQiYwWIom/'
     }
   }
 };
